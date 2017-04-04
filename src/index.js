@@ -1,9 +1,10 @@
+import fs from 'fs'
 import xs from 'xstream'
 import { run } from '@cycle/run'
 import { makeLogDriver } from './drivers/makeLogDriver'
 import { makeMineflayerDriver } from './drivers/makeMineflayerDriver'
 
-const username = 'ECHO'
+const env = JSON.parse(fs.readFileSync('env.json', 'utf8'))
 
 function main (sources) {
   const chat$ = sources.minecraft.select('chat')
@@ -13,7 +14,7 @@ function main (sources) {
     }))
 
   const command$ = chat$
-    .filter(chat => chat.message.startsWith(`${username}:`))
+    .filter(chat => chat.message.startsWith(`${env.username}:`))
     .map(chat => Object.assign({}, chat, { command: chat.message.split(' ') }))
 
   const tp$ = command$
@@ -34,7 +35,24 @@ function main (sources) {
       args: [`/execute ${chat.username} ~ ~ ~ tp @p ${chat.command[2]} ${chat.command[3]} ${chat.command[4]}`]
     }))
 
-  const minecraft$ = xs.merge(tpUser$, tpCoordinate$)
+  const spawn$ = command$
+    .filter(chat => chat.command.length === 2)
+    .filter(chat => chat.command[1] === 'spawnpoint')
+    .map(chat => ({
+      action: 'chat',
+      args: [`/execute ${chat.username} ~ ~ ~ spawnpoint ${chat.username}`]
+    }))
+
+  const kill$ = command$
+    .filter(chat => chat.command.length === 2)
+    .filter(chat => chat.command[1] === 'kill')
+    .map(chat => ({
+      action: 'chat',
+      args: [`/execute ${chat.username} ~ ~ ~ kill ${chat.username}`]
+    }))
+
+  const minecraft$ = xs.merge(tpUser$, tpCoordinate$, spawn$, kill$)
+    .debug('minecraft')
 
   return {
     log: chat$,
@@ -44,7 +62,7 @@ function main (sources) {
 
 const drivers = {
   log: makeLogDriver(),
-  minecraft: makeMineflayerDriver({ host: '192.169.1.69', port: 25565, username: username })
+  minecraft: makeMineflayerDriver(env)
 }
 
 run(main, drivers)
